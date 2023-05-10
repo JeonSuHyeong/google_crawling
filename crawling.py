@@ -1,74 +1,70 @@
-from selenium import webdriver 
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.common.by import By
-
-import time
 import os
-import urllib.request
-from multiprocessing import Pool
-import pandas as pd
+import urllib
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from time import sleep
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+# 폴더 생성
 
-key=pd.read_csv('./keyword.txt',encoding='cp949',names=['keyword'])
-keyword=[]
-[keyword.append(key['keyword'][x]) for x in range(len(key))]
-def createFolder(directory):
-    try:
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-    except OSError:
-        print ('Error: Creating directory. ' +  directory)
+keyword = "도서관"
 
-def image_download(keyword):
-    createFolder('./'+keyword+'_low resolution')
-    
-    chromedriver = './chromedriver.exe'
-    driver = webdriver.Chrome(chromedriver)
-    driver.implicitly_wait(3)
-    
-    print(keyword, '검색')
-    driver.get('https://www.google.co.kr/imghp?hl=ko')
-    print(1)
-    # 첫번째 오류
-    Keyword=driver.find_element(By.XPATH,'//*[@id="sbtc"]/div/div[2]/input')
-    Keyword.send_keys(keyword)
-    print(2)
-    driver.find_element(By.XPATH,'//*[@id="sbtc"]/button').click()
-    
-    print(keyword+' 스크롤 중 .............')
-    elem =  driver.find_element(By.TAG_NAME,"body")
-    for i in range(60):
-        elem.send_keys(Keys.PAGE_DOWN)
-        time.sleep(0.1)
-        
+if not os.path.exists(keyword):
+    os.makedirs(keyword)
+
+query = keyword
+
+url = f"https://www.google.com/search?q={query}&tbm=isch"
+driver = webdriver.Chrome()
+driver.get(url)
+
+SCROLL_PAUSE_TIME = 1
+# Get scroll height
+last_height = driver.execute_script("return document.body.scrollHeight")
+
+new_height = 0
+
+while True:
+    # Scroll down to bottom
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    # Wait to load page
+    sleep(SCROLL_PAUSE_TIME)
+    # Calculate new scroll height and compare with last scroll height
+    new_height = driver.execute_script("return document.body.scrollHeight")
+    if new_height == last_height:
+        try:
+            # 결과 더보기 버튼이 나타날 때까지 대기
+            more_button = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".mye4qd"))
+            )
+            more_button.click()
+            sleep(2)
+        except:
+            break
+    last_height = new_height
+
+img_elements = driver.find_elements(By.CSS_SELECTOR,".rg_i")
+
+for i, img in enumerate(img_elements):
+    print(f"{query} : {i+1}/{len(img_elements)} proceed...")
     try:
-        driver.find_element(By.XPATH,'//*[@id="islmp"]/div/div/div/div[1]/div[4]/div[2]/input').click()
-        for i in range(60):
-            elem.send_keys(Keys.PAGE_DOWN)
-            time.sleep(0.1)
+        image_xpath = f'//*[@id="islrg"]/div[1]/div[{i+1}]/a[1]/div[1]/img'
+
+        image_element = WebDriverWait(driver, 3).until(
+        EC.presence_of_element_located((By.XPATH, image_xpath))
+        )
+        image_element = driver.find_element(By.XPATH,image_xpath)
+        image_url = str(image_element.get_attribute("src"))
+        urllib.request.urlretrieve(image_url, str(f"{keyword}/library_han_{i}.jpg"))
+        sleep(1)
+        print(f"img {i} done")
     except:
-        pass
-    
-    links=[]
-    images = driver.find_elements(By.CSS_SELECTOR,"img.rg_i.Q4LuWd")
-    for image in images:
-        if image.get_attribute('src')!=None:
-            links.append(image.get_attribute('src'))
-    
-    print(keyword+' 찾은 이미지 개수:',len(links))
-    time.sleep(2)
-    
-    for k,i in enumerate(links):
-        url = i
-        start = time.time()
-        urllib.request.urlretrieve(url, "./"+keyword+"_low resolution/"+keyword+"_"+str(k)+".jpg")
-        print(str(k+1)+'/'+str(len(links))+' '+keyword+' 다운로드 중....... Download time : '+str(time.time() - start)[:5]+' 초')
-    print(keyword+' ---다운로드 완료---')
-    
-    driver.close()
+        print(f"error {i}")
+        print(type(image_element))
+        print(type(image_url))
+        sleep(0.5)
 
-# =============================================================================
-# 실행
-# =============================================================================
-if __name__=='__main__':
-    pool = Pool(processes=4)
-    pool.map(image_download, keyword)
+
+# 웹 드라이버 종료
+driver.quit()
